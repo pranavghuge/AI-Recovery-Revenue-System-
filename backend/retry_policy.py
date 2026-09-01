@@ -15,6 +15,7 @@ from backend.policy_belief_table import estimate_success_probability
 
 RETRY_COST_INR = 5.0
 MAX_RETRY_ATTEMPTS = 2
+CONFIDENCE_MANUAL_REVIEW_THRESHOLD = 0.55
 BASELINE_RETRY_DELAY = timedelta(hours=4)
 BASELINE_SUCCESS_ESTIMATE = 0.40
 SALARY_RETRY_HOUR = 9
@@ -33,16 +34,17 @@ VALID_ACTIONS = frozenset(
 def decide_action(reason: str, confidence: float, txn_context: dict, policy: str = "smart") -> dict:
     """Choose a compliant recovery action without mutating or storing state.
 
-    ``confidence`` belongs to the fixed module contract. T07 applies its
-    confidence-routing threshold; T06 intentionally leaves it unchanged here.
+    A confidence below 0.55 is routed to manual review before any reason-based
+    action can be selected. This is deliberately a conservative override.
     The result's ``expected_value`` is the gross expected recovered ₹ amount
     (probability × amount). A ₹5 retry cost is used only to compare a retry
     against the ``no_action`` utility of ₹0.
     """
 
-    del confidence
     if policy not in VALID_POLICIES:
         raise ValueError(f"Unsupported policy: {policy}")
+    if _confidence(confidence) < CONFIDENCE_MANUAL_REVIEW_THRESHOLD:
+        return _decision("escalate_manual_review", None, 0.0)
 
     decision_at = _decision_at(txn_context)
     amount = _amount(txn_context)
@@ -120,6 +122,16 @@ def _decision_at(txn_context: Mapping[str, Any]) -> datetime:
         except ValueError as error:
             raise ValueError("decision_at must be an ISO datetime") from error
     raise ValueError("txn_context requires a decision_at datetime")
+
+
+def _confidence(value: float) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("confidence must be numeric") from error
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    return confidence
 
 
 def _amount(txn_context: Mapping[str, Any]) -> float:
