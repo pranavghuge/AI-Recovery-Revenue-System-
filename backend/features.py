@@ -61,7 +61,7 @@ SPLIT_FIELDNAMES = (
 )
 
 # Set when T04 freezes the generated held-out test artifact.
-TEST_SET_V1_SHA256 = "27833981cb1170e5666cc30e8f606c5a96b86002d9da99645e90b189ab3777d3"
+TEST_SET_V1_SHA256 = "3af19f793f00a237a595a8c548bb98b2e99c012841a49a0757d2d81a9bfc9bb3"
 
 
 def prepare_dataset_splits(

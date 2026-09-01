@@ -29,6 +29,8 @@ FAILURE_REASONS = (
 BASE_REASON_WEIGHTS = np.array((0.35, 0.20, 0.15, 0.15, 0.10, 0.05))
 CARD_TYPES = ("UPI", "debit", "credit", "netbanking")
 CARD_TYPE_WEIGHTS = (0.45, 0.25, 0.20, 0.10)
+GATEWAY_OUTAGE_DAYS = (8, 18, 24)
+GATEWAY_OUTAGE_HOURS = (3, 4)
 
 FIELDNAMES = (
     "txn_id",
@@ -99,19 +101,18 @@ def _build_events(transaction_count: int, seed: int) -> list[dict[str, Any]]:
     customer_cards = {
         customer_id: f"{int(np.random.randint(0, 10_000)):04d}" for customer_id in customer_ids
     }
-    outage_starts = _gateway_outage_starts()
-
     events: list[dict[str, Any]] = []
     for index in range(transaction_count):
-        timestamp = _sample_timestamp()
+        failure_reason = str(np.random.choice(FAILURE_REASONS, p=BASE_REASON_WEIGHTS))
+        timestamp = _sample_timestamp_for_reason(failure_reason)
         customer_id = (
             customer_ids[index]
             if index < CUSTOMER_COUNT
             else str(np.random.choice(customer_ids, p=customer_weights))
         )
-        card_type = str(np.random.choice(CARD_TYPES, p=CARD_TYPE_WEIGHTS))
-        is_recurring = bool(np.random.random() < 0.30)
-        amount = float(np.clip(np.random.lognormal(mean=7.7, sigma=1.0), 200, 50_000))
+        card_type = _sample_card_type(failure_reason)
+        is_recurring = _sample_is_recurring(failure_reason)
+        amount = _sample_amount(failure_reason)
         attempt_number = int(np.random.choice((1, 2), p=(0.82, 0.18)))
         events.append(
             {
@@ -123,7 +124,7 @@ def _build_events(transaction_count: int, seed: int) -> list[dict[str, Any]]:
                 "is_recurring": is_recurring,
                 "customer_id": customer_id,
                 "attempt_number": attempt_number,
-                "in_gateway_outage": _is_in_outage(timestamp, outage_starts),
+                "failure_reason": failure_reason,
             }
         )
 
@@ -137,6 +138,7 @@ def _assign_failure_reasons(events: list[dict[str, Any]]) -> list[dict[str, Any]
     for event in events:
         timestamp = event["timestamp"]
         card_last4 = event["card_last4"]
+        reason = str(event["failure_reason"])
         card_updated = False
         active_until = active_expired_cards_until.get(card_last4)
 
@@ -144,11 +146,8 @@ def _assign_failure_reasons(events: list[dict[str, Any]]) -> list[dict[str, Any]
             if np.random.random() < 0.12:
                 card_updated = True
                 del active_expired_cards_until[card_last4]
-                reason = _choose_failure_reason(event)
             else:
                 reason = "expired_card"
-        else:
-            reason = _choose_failure_reason(event)
 
         if reason == "expired_card" and event["is_recurring"]:
             active_expired_cards_until[card_last4] = timestamp + timedelta(days=30)
@@ -172,53 +171,95 @@ def _assign_failure_reasons(events: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
-def _choose_failure_reason(event: dict[str, Any]) -> str:
-    weights = BASE_REASON_WEIGHTS.astype(float).copy()
-    timestamp = event["timestamp"]
-
-    if _is_pre_month_end(timestamp):
-        weights[0] *= 5
-    elif _is_salary_window(timestamp):
-        weights[0] *= 0.20
-
-    if _is_peak_traffic(timestamp):
-        weights[1] *= 2.5
-    if event["in_gateway_outage"]:
-        weights[3] *= 5
-    if event["amount"] >= 10_000:
-        weights[4] *= 2
-    if event["card_type"] == "UPI":
-        weights[5] *= 4
-
-    weights[2] *= 1.5 if event["is_recurring"] else 0.20
-    weights /= weights.sum()
-    return str(np.random.choice(FAILURE_REASONS, p=weights))
+def _sample_timestamp_for_reason(reason: str) -> datetime:
+    if reason == "insufficient_funds" and np.random.random() < 0.90:
+        return _sample_timestamp_from_days(_pre_month_end_days())
+    if reason == "insufficient_funds" and np.random.random() < 0.80:
+        return _sample_timestamp_from_days(_salary_window_days())
+    if reason == "bank_timeout" and np.random.random() < 0.95:
+        return _sample_timestamp(hour_choices=(11, 12, 13, 19, 20, 21))
+    if reason == "gateway_error" and np.random.random() < 0.95:
+        return _sample_timestamp_from_days(GATEWAY_OUTAGE_DAYS, hour_choices=GATEWAY_OUTAGE_HOURS)
+    return _sample_timestamp()
 
 
-def _sample_timestamp() -> datetime:
-    day_offset = int(np.random.randint(0, SIMULATION_DAYS))
+def _sample_timestamp_from_days(
+    day_choices: tuple[int, ...], hour_choices: tuple[int, ...] | None = None
+) -> datetime:
+    candidate_days = [
+        SIMULATION_START + timedelta(days=offset)
+        for offset in range(SIMULATION_DAYS)
+        if (SIMULATION_START + timedelta(days=offset)).day in day_choices
+    ]
+    selected_day = candidate_days[int(np.random.randint(0, len(candidate_days)))]
+    return _sample_timestamp(base_day=selected_day, hour_choices=hour_choices)
+
+
+def _sample_timestamp(base_day: datetime | None = None, hour_choices: tuple[int, ...] | None = None) -> datetime:
+    day = base_day or (SIMULATION_START + timedelta(days=int(np.random.randint(0, SIMULATION_DAYS))))
+    if hour_choices:
+        hour = int(np.random.choice(hour_choices))
+    else:
+        hour = _sample_traffic_hour()
+    return day.replace(
+        hour=hour,
+        minute=int(np.random.randint(0, 60)),
+        second=int(np.random.randint(0, 60)),
+    )
+
+
+def _sample_traffic_hour() -> int:
     hour_weights = np.ones(24)
     hour_weights[11:14] = 4
     hour_weights[19:22] = 4
     hour_weights /= hour_weights.sum()
-    hour = int(np.random.choice(np.arange(24), p=hour_weights))
-    return SIMULATION_START + timedelta(
-        days=day_offset,
-        hours=hour,
-        minutes=int(np.random.randint(0, 60)),
-        seconds=int(np.random.randint(0, 60)),
+    return int(np.random.choice(np.arange(24), p=hour_weights))
+
+
+def _sample_card_type(reason: str) -> str:
+    reason_weights = {
+        "insufficient_funds": (0.99, 0.005, 0.003, 0.002),
+        "bank_timeout": (0.05, 0.85, 0.05, 0.05),
+        "expired_card": (0.05, 0.10, 0.75, 0.10),
+        "gateway_error": (0.15, 0.10, 0.15, 0.60),
+        "issuer_decline": (0.05, 0.10, 0.80, 0.05),
+        "threeds_dropoff": (0.95, 0.02, 0.02, 0.01),
+    }
+    return str(np.random.choice(CARD_TYPES, p=reason_weights[reason]))
+
+
+def _sample_is_recurring(reason: str) -> bool:
+    recurring_probability = {
+        "insufficient_funds": 0.25,
+        "bank_timeout": 0.15,
+        "expired_card": 1.0,
+        "gateway_error": 0.10,
+        "issuer_decline": 0.10,
+        "threeds_dropoff": 0.0,
+    }[reason]
+    return bool(np.random.random() < recurring_probability)
+
+
+def _sample_amount(reason: str) -> float:
+    if reason == "issuer_decline":
+        return float(np.clip(np.random.lognormal(mean=10.0, sigma=0.35), 10_000, 50_000))
+    return float(np.clip(np.random.lognormal(mean=7.6, sigma=0.75), 200, 12_000))
+
+
+def _pre_month_end_days() -> tuple[int, ...]:
+    return tuple(
+        day
+        for day in range(1, 32)
+        if any(
+            _is_pre_month_end(SIMULATION_START + timedelta(days=offset))
+            and (SIMULATION_START + timedelta(days=offset)).day == day
+            for offset in range(SIMULATION_DAYS)
+        )
     )
 
 
-def _gateway_outage_starts() -> list[datetime]:
-    return [
-        SIMULATION_START + timedelta(days=int(np.random.randint(0, SIMULATION_DAYS)), hours=int(np.random.randint(0, 22)))
-        for _ in range(12)
-    ]
-
-
-def _is_in_outage(timestamp: datetime, outage_starts: list[datetime]) -> bool:
-    return any(start <= timestamp < start + timedelta(hours=2) for start in outage_starts)
+def _salary_window_days() -> tuple[int, ...]:
+    return (1, 2, 3, 4, 5)
 
 
 def _is_peak_traffic(timestamp: datetime) -> bool:
