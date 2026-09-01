@@ -1,0 +1,6 @@
+txn_id,source_split,amount,hour_of_day,day_of_month,card_type,is_recurring,customer_past_failure_count,customer_past_failure_reasons_distribution,attempt_number,decision_at,expected_action
+b6a02269-5b7f-578d-a19f-7216bd36bbc9,train,7290.65,0,1,UPI,true,0,{},1,2026-01-01T00:18:03,notify_update_card
+e61396da-7301-56bd-8aaf-2fa2a75f1255,train,13988.65,4,1,credit,false,1,"{""expired_card"":1.0}",1,2026-01-01T04:14:28,retry_scheduled
+051795b1-8011-5f57-a2cb-337e000bc37b,train,1031.98,12,1,credit,false,5,"{""expired_card"":0.8,""issuer_decline"":0.2}",2,2026-01-01T12:07:07,no_action
+38e92f68-c295-5a5f-9453-94909d38edfd,train,477.29,12,1,credit,false,7,"{""expired_card"":0.714286,""insufficient_funds"":0.142857,""issuer_decline"":0.142857}",1,2026-01-01T12:13:20,retry_now
+6a626f5f-55af-514b-a3fc-f96301ad3c99,train,3031.72,13,2,UPI,false,39,"{""bank_timeout"":0.25641,""expired_card"":0.384615,""insufficient_funds"":0.205128,""issuer_decline"":0.128205,""threeds_dropoff"":0.025641}",1,2026-01-02T13:17:45,escalate_manual_review

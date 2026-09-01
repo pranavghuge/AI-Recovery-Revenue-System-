@@ -1,0 +1,20 @@
+{
+  "version": "demo-v1",
+  "explanations": {
+    "b6a02269-5b7f-578d-a19f-7216bd36bbc9": {
+      "explanation": "Failure reason expired_card at confidence 0.5726182439492946. Request a card update for amount 7290.65; the modeled expected recovered amount is 0.0."
+    },
+    "e61396da-7301-56bd-8aaf-2fa2a75f1255": {
+      "explanation": "Failure reason issuer_decline at confidence 0.999993221461935. Schedule the retry at 2026-01-02T04:14:28 for amount 13988.65; the modeled expected recovered amount is 4476.37."
+    },
+    "051795b1-8011-5f57-a2cb-337e000bc37b": {
+      "explanation": "Failure reason insufficient_funds at confidence 0.715812037642813. Take no action for amount 1031.98; the modeled expected recovered amount is 0.0."
+    },
+    "38e92f68-c295-5a5f-9453-94909d38edfd": {
+      "explanation": "Failure reason bank_timeout at confidence 0.9643068671798247. Retry now for amount 477.29; the modeled expected recovered amount is 343.65."
+    },
+    "6a626f5f-55af-514b-a3fc-f96301ad3c99": {
+      "explanation": "Failure reason threeds_dropoff at confidence 0.5058353614988965. Escalate this amount 3031.72 for manual review; the modeled expected recovered amount is 0.0."
+    }
+  }
+}
