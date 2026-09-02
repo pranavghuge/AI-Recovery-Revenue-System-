@@ -295,18 +295,35 @@ def render_dashboard() -> None:
 
 
 def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
-    """Render a previously made API decision without changing it."""
+    """Render one API response as a read-only classification-to-explanation trace."""
 
-    st.write(f"Reason: {response['reason']} ({response['confidence']:.2%} confidence)")
-    st.write(f"Action: {response['action']}")
-    st.markdown(f"### Status: {ACTION_STATUS_BADGES[response['action']]}")
-    if response["retry_at"]:
-        st.write(f"Retry at: {response['retry_at']}")
-    st.write(f"Expected Recovery Value (Predicted): {_format_inr(response['expected_value'])}")
+    explanation_source = {
+        "ai_generated": "AI generated",
+        "template_fallback": "Template fallback",
+    }[response["explanation_source"]]
+
+    st.subheader("Decision trace")
+    st.caption("Actual outputs from this single recovery-action API response.")
+    classify_column, decide_column, explain_column = st.columns(3)
+    with classify_column:
+        st.markdown("#### 1. Classify")
+        st.write(f"Reason: {response['reason']}")
+        st.write(f"Confidence: {response['confidence']:.2%}")
+    with decide_column:
+        st.markdown("#### 2. Decide")
+        st.write(f"Action: {response['action']}")
+        st.markdown(f"**{ACTION_STATUS_BADGES[response['action']]}**")
+        if response["retry_at"]:
+            st.write(f"Retry at: {response['retry_at']}")
+        st.write(f"Expected Recovery Value: {_format_inr(response['expected_value'])}")
+    with explain_column:
+        st.markdown("#### 3. Explain")
+        st.write(f"Source: {explanation_source}")
+        st.write(response["explanation"])
 
     candidates = response.get("candidates")
     if candidates:
-        st.caption("Smart-policy candidate comparison (predicted Expected Recovery Value).")
+        st.caption("Scored policy candidates (predicted Expected Recovery Value).")
         st.dataframe(
             [
                 {
@@ -319,13 +336,6 @@ def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
             hide_index=True,
             use_container_width=True,
         )
-
-    explanation_source = {
-        "ai_generated": "AI generated",
-        "template_fallback": "Template fallback",
-    }[response["explanation_source"]]
-    st.caption(f"Explanation source: {explanation_source}")
-    st.info(response["explanation"])
 
 
 def parse_history_distribution(value: str) -> dict[str, float]:
