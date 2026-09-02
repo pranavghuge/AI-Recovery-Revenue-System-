@@ -1,0 +1,10 @@
+fastapi<1.0,>=0.115
+google-genai<2.0,>=1.0
+numpy<3.0,>=2.0
+pandas<3.0,>=2.0
+scikit-learn<2.0,>=1.5
+streamlit<2.0,>=1.40
+uvicorn[standard]<1.0,>=0.30
+
+[dev]
+pytest<9.0,>=8.0

@@ -74,36 +74,37 @@ def render_dashboard() -> None:
     st.set_page_config(page_title="Recoverly", layout="wide")
     st.title("Recoverly: recovery decisions with evidence")
     st.caption(
-        "Reported figures use only the frozen held-out test set. "
-        "Demo cases below are illustrative train/dev examples and are not included in these metrics."
+        "Actual figures use only the frozen held-out test set and the policy-blind outcome model. "
+        "Predicted values are policy belief-table estimates. Demo cases below are illustrative "
+        "train/dev examples and are not included in the actual metrics."
     )
 
     baseline_column, smart_column, uplift_column = st.columns(3)
-    baseline_column.metric("Baseline recovered", _format_inr(baseline["rupees_recovered"]))
-    baseline_column.caption(f"Recovery rate: {baseline['recovery_rate']:.1%}")
-    smart_column.metric("Agent recovered", _format_inr(smart["rupees_recovered"]))
-    smart_column.caption(f"Recovery rate: {smart['recovery_rate']:.1%}")
-    uplift_column.metric("Incremental uplift", _format_inr(uplift))
-    uplift_column.caption("Smart ₹ recovered − baseline ₹ recovered")
+    baseline_column.metric("Actual baseline recovered", _format_inr(baseline["rupees_recovered"]))
+    baseline_column.caption(f"Actual recovery rate: {baseline['recovery_rate']:.1%}")
+    smart_column.metric("Actual agent recovered", _format_inr(smart["rupees_recovered"]))
+    smart_column.caption(f"Actual recovery rate: {smart['recovery_rate']:.1%}")
+    uplift_column.metric("Actual incremental uplift", _format_inr(uplift))
+    uplift_column.caption("Actual smart ₹ recovered − actual baseline ₹ recovered")
 
-    st.subheader("Held-out policy comparison")
+    st.subheader("Actual held-out policy comparison")
     st.bar_chart(
         {
-            "Baseline recovery rate": baseline["recovery_rate"],
-            "Agent recovery rate": smart["recovery_rate"],
+            "Actual baseline recovery rate": baseline["recovery_rate"],
+            "Actual agent recovery rate": smart["recovery_rate"],
         }
     )
     st.dataframe(
         [
             {
                 "Policy": "Baseline",
-                "Recovery rate": f"{baseline['recovery_rate']:.1%}",
-                "₹ recovered": _format_inr(baseline["rupees_recovered"]),
+                "Actual recovery rate": f"{baseline['recovery_rate']:.1%}",
+                "Actual ₹ recovered": _format_inr(baseline["rupees_recovered"]),
             },
             {
                 "Policy": "Agent",
-                "Recovery rate": f"{smart['recovery_rate']:.1%}",
-                "₹ recovered": _format_inr(smart["rupees_recovered"]),
+                "Actual recovery rate": f"{smart['recovery_rate']:.1%}",
+                "Actual ₹ recovered": _format_inr(smart["rupees_recovered"]),
             },
         ],
         hide_index=True,
@@ -126,7 +127,9 @@ def render_dashboard() -> None:
         st.write(f"Action: {response['action']}")
         if response["retry_at"]:
             st.write(f"Retry at: {response['retry_at']}")
-        st.write(f"Expected recovered amount: {_format_inr(response['expected_value'])}")
+        st.write(
+            f"Expected Recovery Value (Predicted): {_format_inr(response['expected_value'])}"
+        )
         st.info(response["explanation"])
 
 
