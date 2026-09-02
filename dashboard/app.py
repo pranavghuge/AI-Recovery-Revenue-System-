@@ -14,6 +14,13 @@ from backend.features import TEST_SET_PATH, verify_frozen_test_set
 
 
 DEMO_CASES_PATH = Path(__file__).parents[1] / "backend" / "data" / "demo_cases.csv"
+ACTION_STATUS_BADGES = {
+    "escalate_manual_review": "🟡 REVIEW",
+    "no_action": "🔴 BLOCKED",
+    "retry_now": "🟢 AUTO",
+    "retry_scheduled": "🟢 AUTO",
+    "notify_update_card": "🟢 AUTO",
+}
 
 
 def load_dashboard_metrics(
@@ -125,6 +132,7 @@ def render_dashboard() -> None:
         response = run_demo_case(selected_case)
         st.write(f"Reason: {response['reason']} ({response['confidence']:.2%} confidence)")
         st.write(f"Action: {response['action']}")
+        st.markdown(f"### Status: {ACTION_STATUS_BADGES[response['action']]}")
         if response["retry_at"]:
             st.write(f"Retry at: {response['retry_at']}")
         st.write(
