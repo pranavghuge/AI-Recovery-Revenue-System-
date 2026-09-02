@@ -1,10 +1,12 @@
 """Tests for held-out-only dashboard data preparation."""
 
 import csv
+import json
 from pathlib import Path
 
 import pytest
 
+import dashboard.app as dashboard_app
 from backend.evaluation import RETRY_OUTCOMES_PATH, compute_metrics
 from backend.features import TEST_SET_PATH
 from dashboard.app import (
@@ -14,7 +16,9 @@ from dashboard.app import (
     load_feature_importances,
     load_opportunity_matrix,
     load_revenue_at_risk,
+    parse_history_distribution,
     run_demo_case,
+    run_live_simulation,
 )
 
 
@@ -87,3 +91,50 @@ def test_revenue_at_risk_groups_frozen_failed_amounts_by_reason() -> None:
     assert sum(row["Revenue at risk (₹)"] for row in revenue_at_risk) == pytest.approx(
         sum(float(row["amount"]) for row in test_rows)
     )
+
+
+def test_live_simulator_posts_leakage_safe_payload_to_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "amount": 1_000.0,
+        "hour_of_day": 9,
+        "day_of_month": 1,
+        "card_type": "debit",
+        "is_recurring": False,
+        "customer_past_failure_count": 0,
+        "customer_past_failure_reasons_distribution": {},
+        "attempt_number": 1,
+        "decision_at": "2026-02-01T09:00:00",
+        "scheduled_retry_ats": [],
+    }
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"action":"retry_now"}'
+
+    def fake_urlopen(request, timeout: int):
+        captured["url"] = request.full_url
+        captured["body"] = request.data
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(dashboard_app, "urlopen", fake_urlopen)
+
+    assert run_live_simulation(payload, api_url="http://api.test/predict-recovery-action") == {
+        "action": "retry_now"
+    }
+    assert captured["url"] == "http://api.test/predict-recovery-action"
+    assert json.loads(captured["body"]) == payload
+    assert captured["timeout"] == 10
+
+
+def test_live_simulator_validates_history_distribution_json() -> None:
+    assert parse_history_distribution('{"bank_timeout": 0.75}') == {"bank_timeout": 0.75}
+    with pytest.raises(ValueError, match="valid JSON"):
+        parse_history_distribution("not-json")

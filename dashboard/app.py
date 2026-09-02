@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from backend.api.main import predict_recovery_action
 from backend.api.schemas import RecoveryActionRequest
@@ -27,6 +30,9 @@ ACTION_STATUS_BADGES = {
     "retry_scheduled": "🟢 AUTO",
     "notify_update_card": "🟢 AUTO",
 }
+LIVE_SIMULATION_API_URL = os.environ.get(
+    "RECOVERLY_API_URL", "http://127.0.0.1:8000/predict-recovery-action"
+)
 
 
 def load_dashboard_metrics(
@@ -133,6 +139,29 @@ def run_demo_case(case: dict[str, str]) -> dict[str, Any]:
     return predict_recovery_action(request).model_dump(mode="json")
 
 
+def run_live_simulation(
+    payload: dict[str, Any], api_url: str = LIVE_SIMULATION_API_URL
+) -> dict[str, Any]:
+    """Send a user-entered, leakage-safe scenario to the running FastAPI endpoint."""
+
+    request = Request(
+        api_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Recovery API rejected the simulation: {details}") from error
+    except URLError as error:
+        raise ConnectionError(
+            "Could not reach the Recovery API. Start it at the configured RECOVERLY_API_URL first."
+        ) from error
+
+
 def render_dashboard() -> None:
     """Render the Streamlit dashboard when launched with streamlit run."""
 
@@ -220,21 +249,98 @@ def render_dashboard() -> None:
         f"Expected illustrative action: {selected_case['expected_action']}."
     )
     if st.button("Run recovery action", type="primary"):
-        response = run_demo_case(selected_case)
-        st.write(f"Reason: {response['reason']} ({response['confidence']:.2%} confidence)")
-        st.write(f"Action: {response['action']}")
-        st.markdown(f"### Status: {ACTION_STATUS_BADGES[response['action']]}")
-        if response["retry_at"]:
-            st.write(f"Retry at: {response['retry_at']}")
-        st.write(
-            f"Expected Recovery Value (Predicted): {_format_inr(response['expected_value'])}"
+        _render_decision_response(st, run_demo_case(selected_case))
+
+    st.subheader("Live recovery simulator")
+    st.caption(
+        "Live simulation — not part of held-out or demo metrics. "
+        "This form sends your scenario to the running FastAPI recovery-action endpoint."
+    )
+    with st.form("live-recovery-simulator"):
+        amount = st.number_input("Amount (₹)", min_value=0.0, value=1_000.0, step=100.0)
+        hour_of_day = st.slider("Hour of day", min_value=0, max_value=23, value=9)
+        day_of_month = st.slider("Day of month", min_value=1, max_value=31, value=1)
+        card_type = st.selectbox("Card type", ("UPI", "debit", "credit", "netbanking"))
+        is_recurring = st.checkbox("Recurring payment", value=False)
+        past_failure_count = st.number_input(
+            "Customer past failure count", min_value=0, value=0, step=1
         )
-        explanation_source = {
-            "ai_generated": "AI generated",
-            "template_fallback": "Template fallback",
-        }[response["explanation_source"]]
-        st.caption(f"Explanation source: {explanation_source}")
-        st.info(response["explanation"])
+        history_distribution = st.text_area(
+            "Past failure reason distribution (JSON)", value="{}"
+        )
+        attempt_number = st.number_input("Attempt number", min_value=1, value=1, step=1)
+        decision_date = st.date_input("Decision date")
+        decision_time = st.time_input("Decision time")
+        submitted = st.form_submit_button("Simulate recovery action", type="primary")
+
+    if submitted:
+        try:
+            simulation_payload = {
+                "amount": float(amount),
+                "hour_of_day": hour_of_day,
+                "day_of_month": day_of_month,
+                "card_type": card_type,
+                "is_recurring": is_recurring,
+                "customer_past_failure_count": int(past_failure_count),
+                "customer_past_failure_reasons_distribution": parse_history_distribution(
+                    history_distribution
+                ),
+                "attempt_number": int(attempt_number),
+                "decision_at": datetime.combine(decision_date, decision_time).isoformat(),
+                "scheduled_retry_ats": [],
+            }
+            _render_decision_response(st, run_live_simulation(simulation_payload))
+        except (ConnectionError, ValueError) as error:
+            st.error(str(error))
+
+
+def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
+    """Render a previously made API decision without changing it."""
+
+    st.write(f"Reason: {response['reason']} ({response['confidence']:.2%} confidence)")
+    st.write(f"Action: {response['action']}")
+    st.markdown(f"### Status: {ACTION_STATUS_BADGES[response['action']]}")
+    if response["retry_at"]:
+        st.write(f"Retry at: {response['retry_at']}")
+    st.write(f"Expected Recovery Value (Predicted): {_format_inr(response['expected_value'])}")
+
+    candidates = response.get("candidates")
+    if candidates:
+        st.caption("Smart-policy candidate comparison (predicted Expected Recovery Value).")
+        st.dataframe(
+            [
+                {
+                    "Action": candidate["action"],
+                    "Retry at": candidate["retry_at"],
+                    "Expected Recovery Value (₹)": _format_inr(candidate["expected_value"]),
+                }
+                for candidate in candidates
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    explanation_source = {
+        "ai_generated": "AI generated",
+        "template_fallback": "Template fallback",
+    }[response["explanation_source"]]
+    st.caption(f"Explanation source: {explanation_source}")
+    st.info(response["explanation"])
+
+
+def parse_history_distribution(value: str) -> dict[str, float]:
+    """Validate the API's optional historical-failure feature from form JSON."""
+
+    try:
+        distribution = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError("Past failure reason distribution must be valid JSON.") from error
+    if not isinstance(distribution, dict):
+        raise ValueError("Past failure reason distribution must be a JSON object.")
+    try:
+        return {str(reason): float(weight) for reason, weight in distribution.items()}
+    except (TypeError, ValueError) as error:
+        raise ValueError("Past failure reason distribution values must be numeric.") from error
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
