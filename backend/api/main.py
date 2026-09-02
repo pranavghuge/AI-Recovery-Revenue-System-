@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from backend.api.schemas import RecoveryActionRequest, RecoveryActionResponse
 from backend.classifier import predict_failure_reason
-from backend.explain import explain_decision
+from backend.explain import explain_decision_with_source, is_template_fallback
 from backend.retry_policy import decide_action
 
 
@@ -49,14 +49,26 @@ def predict_recovery_action(request: RecoveryActionRequest) -> RecoveryActionRes
         **decision,
         "amount": request.amount,
     }
-    explanation = _cached_explanation(request.txn_id) or explain_decision(explanation_decision)
-    return RecoveryActionResponse(**prediction, **decision, amount=request.amount, explanation=explanation)
+    cached_explanation = _cached_explanation(request.txn_id, explanation_decision)
+    explanation, explanation_source = cached_explanation or explain_decision_with_source(explanation_decision)
+    return RecoveryActionResponse(
+        **prediction,
+        **decision,
+        amount=request.amount,
+        explanation=explanation,
+        explanation_source=explanation_source,
+    )
 
 
-def _cached_explanation(txn_id: str | None) -> str | None:
+def _cached_explanation(txn_id: str | None, decision: dict[str, object]) -> tuple[str, str] | None:
+    """Return a cached explanation only when its source can be verified."""
+
     if not txn_id or not EXPLANATION_CACHE_PATH.exists():
         return None
     with EXPLANATION_CACHE_PATH.open(encoding="utf-8") as cache_file:
         cache = json.load(cache_file)
     entry = cache.get("explanations", {}).get(txn_id)
-    return entry.get("explanation") if isinstance(entry, dict) else None
+    explanation = entry.get("explanation") if isinstance(entry, dict) else None
+    if isinstance(explanation, str) and is_template_fallback(decision, explanation):
+        return explanation, "template_fallback"
+    return None

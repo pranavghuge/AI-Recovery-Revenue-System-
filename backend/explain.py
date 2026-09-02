@@ -21,6 +21,12 @@ NUMBER_PATTERN = re.compile(r"(?<![A-Za-z])[-+]?\d[\d,]*(?:\.\d+)?")
 
 
 def explain_decision(decision: dict) -> str:
+    """Return a grounded narration or deterministic action-specific fallback."""
+
+    return explain_decision_with_source(decision)[0]
+
+
+def explain_decision_with_source(decision: dict) -> tuple[str, str]:
     """Return a grounded narration or deterministic action-specific fallback.
 
     Gemini receives only the six permitted values. A live response gets one
@@ -36,31 +42,37 @@ def explain_decision(decision: dict) -> str:
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        return _fallback_explanation(grounded_decision)
+        return _fallback_explanation(grounded_decision), "template_fallback"
 
     prompt = _build_prompt(grounded_decision)
     deadline = time.monotonic() + LIVE_PATH_LATENCY_BUDGET_SECONDS
     first_timeout = _remaining_timeout(deadline)
     if first_timeout <= 0:
-        return _fallback_explanation(grounded_decision)
+        return _fallback_explanation(grounded_decision), "template_fallback"
 
     try:
         explanation = _generate_from_gemini(prompt, api_key, first_timeout)
     except Exception:
-        return _fallback_explanation(grounded_decision)
+        return _fallback_explanation(grounded_decision), "template_fallback"
     if _passes_grounding_check(explanation, grounded_decision):
-        return explanation
+        return explanation, "ai_generated"
 
     retry_timeout = _remaining_timeout(deadline)
     if retry_timeout <= 0:
-        return _fallback_explanation(grounded_decision)
+        return _fallback_explanation(grounded_decision), "template_fallback"
     try:
         retried_explanation = _generate_from_gemini(prompt, api_key, retry_timeout)
     except Exception:
-        return _fallback_explanation(grounded_decision)
+        return _fallback_explanation(grounded_decision), "template_fallback"
     if _passes_grounding_check(retried_explanation, grounded_decision):
-        return retried_explanation
-    return _fallback_explanation(grounded_decision)
+        return retried_explanation, "ai_generated"
+    return _fallback_explanation(grounded_decision), "template_fallback"
+
+
+def is_template_fallback(decision: dict, explanation: str) -> bool:
+    """Return whether text is exactly the deterministic fallback for a decision."""
+
+    return explanation == _fallback_explanation(_allowed_decision(decision))
 
 
 def _generate_from_gemini(prompt: str, api_key: str, timeout_seconds: float) -> str:

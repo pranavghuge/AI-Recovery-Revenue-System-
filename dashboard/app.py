@@ -14,6 +14,9 @@ from backend.features import TEST_SET_PATH, verify_frozen_test_set
 
 
 DEMO_CASES_PATH = Path(__file__).parents[1] / "backend" / "data" / "demo_cases.csv"
+FEATURE_IMPORTANCES_PATH = (
+    Path(__file__).parents[1] / "backend" / "models" / "feature_importances.csv"
+)
 ACTION_STATUS_BADGES = {
     "escalate_manual_review": "🟡 REVIEW",
     "no_action": "🔴 BLOCKED",
@@ -46,6 +49,17 @@ def load_demo_cases(demo_cases_path: Path | str = DEMO_CASES_PATH) -> list[dict[
     return _read_csv(Path(demo_cases_path))
 
 
+def load_feature_importances(
+    feature_importances_path: Path | str = FEATURE_IMPORTANCES_PATH,
+) -> list[dict[str, float | str]]:
+    """Load persisted classifier importances for dashboard transparency."""
+
+    rows = _read_csv(Path(feature_importances_path))
+    if any({"feature", "importance"} - row.keys() for row in rows):
+        raise ValueError("Feature importances do not match the classifier artifact schema")
+    return [{"feature": row["feature"], "importance": float(row["importance"])} for row in rows]
+
+
 def run_demo_case(case: dict[str, str]) -> dict[str, Any]:
     """Invoke the API handler with one demo case's leakage-safe request body."""
 
@@ -74,6 +88,7 @@ def render_dashboard() -> None:
 
     metrics = load_dashboard_metrics()
     demo_cases = load_demo_cases()
+    feature_importances = load_feature_importances()
     baseline = metrics["baseline"]
     smart = metrics["smart"]
     uplift = metrics["comparison"]["incremental_uplift"]
@@ -118,6 +133,10 @@ def render_dashboard() -> None:
         use_container_width=True,
     )
 
+    st.subheader("Model transparency")
+    st.caption("Feature importance from the trained failure-reason classifier.")
+    st.bar_chart({row["feature"]: row["importance"] for row in feature_importances})
+
     st.subheader("Illustrative recovery action")
     selected_case = st.selectbox(
         "Choose a demo case",
@@ -138,6 +157,11 @@ def render_dashboard() -> None:
         st.write(
             f"Expected Recovery Value (Predicted): {_format_inr(response['expected_value'])}"
         )
+        explanation_source = {
+            "ai_generated": "AI generated",
+            "template_fallback": "Template fallback",
+        }[response["explanation_source"]]
+        st.caption(f"Explanation source: {explanation_source}")
         st.info(response["explanation"])
 
 

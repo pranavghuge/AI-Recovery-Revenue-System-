@@ -43,13 +43,14 @@ def test_api_returns_the_full_recovery_action_contract() -> None:
         "expected_value",
         "amount",
         "explanation",
+        "explanation_source",
     }
 
 
 def test_api_uses_cached_explanation_for_a_demo_case(monkeypatch) -> None:
     monkeypatch.setattr(
         api_main,
-        "explain_decision",
+        "explain_decision_with_source",
         lambda _: (_ for _ in ()).throw(AssertionError("live path used")),
     )
 
@@ -57,10 +58,15 @@ def test_api_uses_cached_explanation_for_a_demo_case(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "Request a card update" in response.json()["explanation"]
+    assert response.json()["explanation_source"] == "template_fallback"
 
 
 def test_api_uses_live_explanation_path_for_a_non_cached_example(monkeypatch) -> None:
-    monkeypatch.setattr(api_main, "explain_decision", lambda decision: f"fresh {decision['action']}")
+    monkeypatch.setattr(
+        api_main,
+        "explain_decision_with_source",
+        lambda decision: (f"fresh {decision['action']}", "ai_generated"),
+    )
     payload = _demo_payload()
     payload["txn_id"] = "fresh-non-cached-example"
 
@@ -68,6 +74,7 @@ def test_api_uses_live_explanation_path_for_a_non_cached_example(monkeypatch) ->
 
     assert response.status_code == 200
     assert response.json()["explanation"].startswith("fresh ")
+    assert response.json()["explanation_source"] == "ai_generated"
 
 
 def test_api_uses_explanation_fallback_for_a_non_cached_example_without_api_key(monkeypatch) -> None:
@@ -79,12 +86,13 @@ def test_api_uses_explanation_fallback_for_a_non_cached_example_without_api_key(
 
     assert response.status_code == 200
     assert response.json()["explanation"].startswith("Failure reason ")
+    assert response.json()["explanation_source"] == "template_fallback"
 
 
 def test_api_enforces_confidence_routing_and_expired_card_safety(monkeypatch) -> None:
     payload = _demo_payload()
     monkeypatch.setattr(api_main, "predict_failure_reason", lambda _: {"reason": "bank_timeout", "confidence": 0.54})
-    monkeypatch.setattr(api_main, "explain_decision", lambda _: "fallback")
+    monkeypatch.setattr(api_main, "explain_decision_with_source", lambda _: ("fallback", "template_fallback"))
     payload["txn_id"] = "low-confidence"
 
     low_confidence_response = client.post("/predict-recovery-action", json=payload)

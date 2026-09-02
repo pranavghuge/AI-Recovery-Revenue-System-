@@ -59,6 +59,24 @@ def test_grounded_live_response_is_returned(monkeypatch: pytest.MonkeyPatch) -> 
     assert explain.explain_decision(_decision()) == grounded_response
 
 
+def test_explanation_source_reports_live_or_template_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    fallback_explanation, fallback_source = explain.explain_decision_with_source(_decision())
+
+    assert fallback_source == "template_fallback"
+    assert explain.is_template_fallback(_decision(), fallback_explanation)
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        explain,
+        "_generate_from_gemini",
+        lambda *_: "Reason insufficient_funds, confidence 0.82, amount 1000.0, expected value 820.0.",
+    )
+    _, live_source = explain.explain_decision_with_source(_decision())
+
+    assert live_source == "ai_generated"
+
+
 def test_grounding_retry_is_limited_to_one_and_stays_within_total_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     calls: list[float] = []

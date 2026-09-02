@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,3 +39,4 @@ class RecoveryActionResponse(BaseModel):
     expected_value: float
     amount: float
     explanation: str
+    explanation_source: Literal["ai_generated", "template_fallback"]

@@ -6,7 +6,13 @@ import pytest
 
 from backend.evaluation import RETRY_OUTCOMES_PATH, compute_metrics
 from backend.features import TEST_SET_PATH
-from dashboard.app import _read_outcome_rows, load_dashboard_metrics, load_demo_cases, run_demo_case
+from dashboard.app import (
+    _read_outcome_rows,
+    load_dashboard_metrics,
+    load_demo_cases,
+    load_feature_importances,
+    run_demo_case,
+)
 
 
 def test_dashboard_uses_shared_metric_formulas_on_frozen_test_data() -> None:
@@ -42,3 +48,12 @@ def test_demo_action_view_uses_the_api_handler() -> None:
 
     assert response["action"] == "notify_update_card"
     assert response["explanation"]
+    assert response["explanation_source"] == "template_fallback"
+
+
+def test_dashboard_loads_classifier_feature_importances() -> None:
+    importances = load_feature_importances()
+
+    assert importances
+    assert all(isinstance(row["feature"], str) and row["feature"] for row in importances)
+    assert all(isinstance(row["importance"], float) for row in importances)
