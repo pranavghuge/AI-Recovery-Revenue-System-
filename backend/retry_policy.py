@@ -58,18 +58,24 @@ def decide_action(reason: str, confidence: float, txn_context: dict, policy: str
     if policy == "baseline":
         retry_at = decision_at + BASELINE_RETRY_DELAY
         expected_value = BASELINE_SUCCESS_ESTIMATE * amount
+        # Baseline has one fixed action, so it deliberately omits candidates.
         return _retry_or_no_action("retry_scheduled", retry_at, expected_value, txn_context)
 
     candidates = _smart_candidates(reason, attempt_number, amount, decision_at)
+    public_candidates = _public_candidates(candidates)
     viable_candidates = [
         candidate for candidate in candidates if not _is_duplicate_retry_at(candidate["retry_at"], txn_context)
     ]
     if not viable_candidates:
-        return _decision("no_action", None, 0.0)
+        return _decision("no_action", None, 0.0, candidates=public_candidates)
 
     best_candidate = max(viable_candidates, key=lambda candidate: candidate["utility"])
     return _retry_or_no_action(
-        best_candidate["action"], best_candidate["retry_at"], best_candidate["expected_value"], txn_context
+        best_candidate["action"],
+        best_candidate["retry_at"],
+        best_candidate["expected_value"],
+        txn_context,
+        candidates=public_candidates,
     )
 
 
@@ -98,18 +104,48 @@ def _smart_candidates(
 
 
 def _retry_or_no_action(
-    action: str, retry_at: datetime, expected_value: float, txn_context: Mapping[str, Any]) -> dict:
+    action: str,
+    retry_at: datetime,
+    expected_value: float,
+    txn_context: Mapping[str, Any],
+    candidates: list[dict[str, Any]] | None = None,
+) -> dict:
     if expected_value - RETRY_COST_INR <= 0 or _is_duplicate_retry_at(retry_at, txn_context):
-        return _decision("no_action", None, 0.0)
-    return _decision(action, retry_at, expected_value)
+        return _decision("no_action", None, 0.0, candidates=candidates)
+    return _decision(action, retry_at, expected_value, candidates=candidates)
 
 
-def _decision(action: str, retry_at: datetime | None, expected_value: float) -> dict:
-    return {
+def _decision(
+    action: str,
+    retry_at: datetime | None,
+    expected_value: float,
+    candidates: list[dict[str, Any]] | None = None,
+) -> dict:
+    decision = {
         "action": action,
         "retry_at": retry_at,
         "expected_value": round(expected_value, 2),
     }
+    if candidates is not None:
+        decision["candidates"] = candidates
+    return decision
+
+
+def _public_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expose smart-policy options without internal window names or utility values."""
+
+    return sorted(
+        [
+            {
+                "action": candidate["action"],
+                "retry_at": candidate["retry_at"],
+                "expected_value": round(float(candidate["expected_value"]), 2),
+            }
+            for candidate in candidates
+        ],
+        key=lambda candidate: float(candidate["expected_value"]),
+        reverse=True,
+    )
 
 
 def _decision_at(txn_context: Mapping[str, Any]) -> datetime:

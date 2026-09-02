@@ -41,6 +41,7 @@ def test_api_returns_the_full_recovery_action_contract() -> None:
         "action",
         "retry_at",
         "expected_value",
+        "candidates",
         "amount",
         "explanation",
         "explanation_source",
@@ -87,6 +88,26 @@ def test_api_uses_explanation_fallback_for_a_non_cached_example_without_api_key(
     assert response.status_code == 200
     assert response.json()["explanation"].startswith("Failure reason ")
     assert response.json()["explanation_source"] == "template_fallback"
+
+
+def test_api_exposes_smart_policy_candidates_in_ranked_order(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api_main,
+        "predict_failure_reason",
+        lambda _: {"reason": "insufficient_funds", "confidence": 0.99},
+    )
+    monkeypatch.setattr(api_main, "explain_decision_with_source", lambda _: ("explanation", "template_fallback"))
+    payload = _demo_payload()
+    payload["txn_id"] = "smart-candidate-example"
+
+    response = client.post("/predict-recovery-action", json=payload)
+
+    assert response.status_code == 200
+    candidates = response.json()["candidates"]
+    assert len(candidates) == 4
+    assert [candidate["expected_value"] for candidate in candidates] == sorted(
+        (candidate["expected_value"] for candidate in candidates), reverse=True
+    )
 
 
 def test_api_enforces_confidence_routing_and_expired_card_safety(monkeypatch) -> None:

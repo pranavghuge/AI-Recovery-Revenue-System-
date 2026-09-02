@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import csv
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from backend.api.main import predict_recovery_action
 from backend.api.schemas import RecoveryActionRequest
+from backend.classifier import _load_artifact, _records_to_matrix
 from backend.evaluation import POLICIES, RETRY_OUTCOMES_PATH, compute_metrics
-from backend.features import TEST_SET_PATH, verify_frozen_test_set
+from backend.features import TEST_SET_PATH, impute_feature_records, verify_frozen_test_set
+from backend.retry_policy import decide_action
 
 
 DEMO_CASES_PATH = Path(__file__).parents[1] / "backend" / "data" / "demo_cases.csv"
@@ -60,6 +63,55 @@ def load_feature_importances(
     return [{"feature": row["feature"], "importance": float(row["importance"])} for row in rows]
 
 
+def load_opportunity_matrix(
+    test_path: Path | str = TEST_SET_PATH,
+    outcomes_path: Path | str = RETRY_OUTCOMES_PATH,
+) -> list[dict[str, float | str]]:
+    """Build predicted smart-policy opportunities from frozen evaluation inputs."""
+
+    test_rows = _load_frozen_test_rows(test_path)
+    outcome_rows = _read_outcome_rows(Path(outcomes_path))
+    _assert_outcomes_match_frozen_test_set(outcome_rows, test_rows)
+    predictions = _predict_opportunity_rows(test_rows)
+
+    opportunities: list[dict[str, float | str]] = []
+    for row, prediction in zip(test_rows, predictions, strict=True):
+        amount = float(row["amount"])
+        decision = decide_action(
+            prediction["reason"],
+            prediction["confidence"],
+            {
+                "amount": amount,
+                "attempt_number": int(float(row["attempt_number"])),
+                "decision_at": datetime.fromisoformat(row["timestamp"]),
+                "scheduled_retry_ats": [],
+            },
+        )
+        expected_value = float(decision["expected_value"])
+        opportunities.append(
+            {
+                "Failure reason": prediction["reason"],
+                "Policy belief recovery probability": expected_value / amount if amount else 0.0,
+                "Transaction amount (₹)": amount,
+                "Expected Recovery Value (₹)": expected_value,
+            }
+        )
+    return opportunities
+
+
+def load_revenue_at_risk(test_path: Path | str = TEST_SET_PATH) -> list[dict[str, float | str]]:
+    """Group frozen failed-transaction value by the observed failure reason."""
+
+    revenue_by_reason: dict[str, float] = {}
+    for row in _load_frozen_test_rows(test_path):
+        reason = row["failure_reason"]
+        revenue_by_reason[reason] = revenue_by_reason.get(reason, 0.0) + float(row["amount"])
+    return [
+        {"Failure reason": reason, "Revenue at risk (₹)": round(amount, 2)}
+        for reason, amount in sorted(revenue_by_reason.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+
 def run_demo_case(case: dict[str, str]) -> dict[str, Any]:
     """Invoke the API handler with one demo case's leakage-safe request body."""
 
@@ -89,6 +141,8 @@ def render_dashboard() -> None:
     metrics = load_dashboard_metrics()
     demo_cases = load_demo_cases()
     feature_importances = load_feature_importances()
+    opportunity_matrix = load_opportunity_matrix()
+    revenue_at_risk = load_revenue_at_risk()
     baseline = metrics["baseline"]
     smart = metrics["smart"]
     uplift = metrics["comparison"]["incremental_uplift"]
@@ -137,6 +191,24 @@ def render_dashboard() -> None:
     st.caption("Feature importance from the trained failure-reason classifier.")
     st.bar_chart({row["feature"]: row["importance"] for row in feature_importances})
 
+    st.subheader("Recovery opportunity matrix")
+    st.caption(
+        "Predicted smart-policy opportunities from the frozen held-out test set. "
+        "The x-axis is the policy-belief recovery probability for the selected action, "
+        "calculated as Expected Recovery Value ÷ transaction amount; it is not an actual outcome."
+    )
+    st.scatter_chart(
+        opportunity_matrix,
+        x="Policy belief recovery probability",
+        y="Transaction amount (₹)",
+        size="Expected Recovery Value (₹)",
+        color="Failure reason",
+    )
+
+    st.subheader("Revenue at risk by failure reason")
+    st.caption("Failed transaction value grouped by observed failure reason in the frozen held-out test set.")
+    st.bar_chart(revenue_at_risk, x="Failure reason", y="Revenue at risk (₹)")
+
     st.subheader("Illustrative recovery action")
     selected_case = st.selectbox(
         "Choose a demo case",
@@ -168,6 +240,46 @@ def render_dashboard() -> None:
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as csv_file:
         return list(csv.DictReader(csv_file))
+
+
+def _load_frozen_test_rows(test_path: Path | str) -> list[dict[str, str]]:
+    resolved_test_path = Path(test_path).resolve()
+    if resolved_test_path != TEST_SET_PATH.resolve():
+        raise ValueError("Dashboard charts may only use test_set_v1.csv")
+    verify_frozen_test_set(resolved_test_path)
+    return _read_csv(resolved_test_path)
+
+
+def _classifier_features(row: dict[str, str]) -> dict[str, str]:
+    return {
+        "amount": row["amount"],
+        "hour_of_day": row["hour_of_day"],
+        "day_of_month": row["day_of_month"],
+        "card_type": row["card_type"],
+        "is_recurring": row["is_recurring"],
+        "customer_past_failure_count": row["customer_past_failure_count"],
+        "customer_past_failure_reasons_distribution": row[
+            "customer_past_failure_reasons_distribution"
+        ],
+        "attempt_number": row["attempt_number"],
+    }
+
+
+def _predict_opportunity_rows(rows: list[dict[str, str]]) -> list[dict[str, float | str]]:
+    """Batch existing classifier inference so chart rendering stays responsive."""
+
+    artifact = _load_artifact()
+    features = [_classifier_features(row) for row in rows]
+    prepared_features = impute_feature_records(features, artifact["numeric_medians"])
+    matrix, _ = _records_to_matrix(prepared_features)
+    probabilities = artifact["model"].predict_proba(matrix)
+    return [
+        {
+            "reason": str(artifact["model"].classes_[max(range(len(row)), key=row.__getitem__)]),
+            "confidence": float(max(row)),
+        }
+        for row in probabilities
+    ]
 
 
 def _read_outcome_rows(path: Path) -> list[dict[str, Any]]:

@@ -1,5 +1,6 @@
 """Tests for held-out-only dashboard data preparation."""
 
+import csv
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,8 @@ from dashboard.app import (
     load_dashboard_metrics,
     load_demo_cases,
     load_feature_importances,
+    load_opportunity_matrix,
+    load_revenue_at_risk,
     run_demo_case,
 )
 
@@ -57,3 +60,30 @@ def test_dashboard_loads_classifier_feature_importances() -> None:
     assert importances
     assert all(isinstance(row["feature"], str) and row["feature"] for row in importances)
     assert all(isinstance(row["importance"], float) for row in importances)
+
+
+def test_opportunity_matrix_uses_only_frozen_evaluation_inputs() -> None:
+    opportunities = load_opportunity_matrix()
+
+    assert len(opportunities) == sum(1 for _ in TEST_SET_PATH.open(encoding="utf-8")) - 1
+    assert set(opportunities[0]) == {
+        "Failure reason",
+        "Policy belief recovery probability",
+        "Transaction amount (₹)",
+        "Expected Recovery Value (₹)",
+    }
+    assert all(0.0 <= row["Policy belief recovery probability"] <= 1.0 for row in opportunities)
+    with pytest.raises(ValueError, match="test_set_v1"):
+        load_opportunity_matrix(test_path=TEST_SET_PATH.with_name("dev_set_v1.csv"))
+
+
+def test_revenue_at_risk_groups_frozen_failed_amounts_by_reason() -> None:
+    revenue_at_risk = load_revenue_at_risk()
+    test_rows = list(csv.DictReader(TEST_SET_PATH.open(encoding="utf-8")))
+
+    assert {row["Failure reason"] for row in revenue_at_risk} == {
+        row["failure_reason"] for row in test_rows
+    }
+    assert sum(row["Revenue at risk (₹)"] for row in revenue_at_risk) == pytest.approx(
+        sum(float(row["amount"]) for row in test_rows)
+    )

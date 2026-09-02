@@ -31,12 +31,21 @@ class RecoveryActionRequest(BaseModel):
     scheduled_retry_ats: list[datetime] = Field(default_factory=list)
 
 
+class RecoveryActionCandidate(BaseModel):
+    """One smart-policy option evaluated before selecting the final action."""
+
+    action: str
+    retry_at: datetime
+    expected_value: float
+
+
 class RecoveryActionResponse(BaseModel):
     reason: str
     confidence: float
     action: str
     retry_at: datetime | None
     expected_value: float
+    candidates: list[RecoveryActionCandidate] | None = None
     amount: float
     explanation: str
     explanation_source: Literal["ai_generated", "template_fallback"]

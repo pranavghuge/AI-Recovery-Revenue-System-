@@ -42,6 +42,22 @@ def test_smart_policy_selects_salary_window_for_insufficient_funds() -> None:
     assert decision["expected_value"] == 820.0
 
 
+def test_smart_policy_exposes_all_scored_candidates_in_expected_value_order() -> None:
+    decision = decide_action("insufficient_funds", 0.99, _context(), policy="smart")
+
+    candidates = decision["candidates"]
+    assert len(candidates) == 4
+    assert all(set(candidate) == {"action", "retry_at", "expected_value"} for candidate in candidates)
+    assert [candidate["expected_value"] for candidate in candidates] == sorted(
+        (candidate["expected_value"] for candidate in candidates), reverse=True
+    )
+    assert candidates[0] == {
+        "action": decision["action"],
+        "retry_at": decision["retry_at"],
+        "expected_value": decision["expected_value"],
+    }
+
+
 def test_smart_policy_expected_value_uses_its_belief_table_and_retry_cost() -> None:
     amount = 100.0
     decision = decide_action("bank_timeout", 0.99, _context(amount=amount), policy="smart")
