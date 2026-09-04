@@ -1,0 +1,9 @@
+[theme]
+base = "dark"
+primaryColor = "#5D6673"
+backgroundColor = "#0E1116"
+# This is slightly darker than the brief's initial #161B22 so --block
+# maintains the required 4.5:1 text contrast on panels.
+secondaryBackgroundColor = "#13181E"
+textColor = "#E6E8EB"
+font = "sans serif"

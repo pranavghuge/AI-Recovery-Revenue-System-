@@ -1,0 +1,370 @@
+/*
+Raw CSS selector inventory
+
+- :root: defines Recoverly's reusable CSS design tokens. Streamlit's
+  config.toml provides global theme values but cannot expose CSS custom
+  properties for later presentation-only rules. This selector targets the
+  document root, not a Streamlit-generated class or internal widget markup.
+
+- [data-testid="stMetricValue"]: applies the brief's hero type scale and
+  semantic actual-value color to Streamlit's native metric value. The theme
+  configuration cannot individually style a metric's number.
+
+- [data-testid="stCaptionContainer"] and its paragraph: applies the
+  disclosure-text scale consistently to Streamlit captions. The theme
+  configuration has no caption-specific typography control.
+
+- .actual-number and .predicted-number: presentation-only wrappers placed
+  around existing numbers in app.py, so verified held-out outcomes and model
+  estimates retain their distinct semantic colors without changing values.
+
+- .action-badge* and .decision-trace-*: presentation-only elements emitted by
+  app.py for the existing action status and Classify → Decide → Explain trace.
+  Config.toml cannot express an action-specific pill or style this explicit
+  three-step sequence.
+
+- .live-simulator-disclosure and [data-testid="stForm"] descendants: the
+  simulator disclosure and its existing native form need specific spacing and
+  label typography that config.toml cannot target. These selectors do not
+  alter input values, validation, or form submission behavior.
+
+- .simulator-feedback* and .simulator-loading-indicator: display-only loading
+  and error feedback emitted while the existing live request is in flight or
+  fails. Config.toml cannot replace Streamlit's default spinner/error surface.
+
+- .dashboard-title, [data-testid="stHeadingWithActionElements"] headings, and
+  [data-testid="stDataFrame"]: final page-chrome rules for the custom title,
+  native section headings, and native dataframes. Config.toml cannot set their
+  per-element scale, spacing, or ledger-style border treatment.
+
+- .diagnostic-number and [data-testid="stBaseButton-primary"]: distinguish a
+  model diagnostic from a predicted estimate and apply the neutral interactive
+  control color. Slider track/handle colors inherit the matching primaryColor
+  configured in .streamlit/config.toml; config is Streamlit's stable public
+  theming surface for those native controls.
+
+- --signal-tint: a 12% transparent derivative of the existing signal token,
+  consumed by the candidate-row Styler in app.py. It marks the already-ranked
+  winner without changing candidate text, data, or ordering.
+
+- .st-key-* section containers and [data-testid="stVerticalBlock"]: keyed
+  Streamlit containers define Recoverly's explicit section/content rhythm.
+  Key-generated classes are Streamlit's documented stable styling hook; this
+  avoids applying section-sized margins to individual widgets.
+
+These stable test-id selectors avoid Streamlit's generated CSS class names.
+The Streamlit theme continues to handle application and widget surfaces, so
+existing controls retain their native behavior.
+*/
+
+:root {
+  --bg-base: #0E1116;
+  /* Darkened slightly from the initial #161B22 to preserve --block AA text contrast. */
+  --bg-panel: #13181E;
+  --ink-primary: #E6E8EB;
+  --ink-secondary: #8A929E;
+  --interactive: #5D6673;
+  --signal: #3DDC84;
+  --signal-tint: rgba(61, 220, 132, 0.12);
+  --predicted: #5B8DEF;
+  --warn: #E8A33D;
+  --block: #D9534F;
+  --section-gap: 2.5rem;
+  --content-gap: 0.5rem;
+  --panel-padding: 1.25rem;
+  --field-gap: 1rem;
+}
+
+.st-key-policy-comparison,
+.st-key-model-transparency,
+.st-key-opportunity-matrix,
+.st-key-revenue-at-risk,
+.st-key-illustrative-action,
+.st-key-decision-trace,
+.st-key-live-simulator {
+  margin-top: var(--section-gap);
+}
+
+.st-key-hero-metrics > [data-testid="stVerticalBlock"],
+.st-key-policy-comparison > [data-testid="stVerticalBlock"],
+.st-key-model-transparency > [data-testid="stVerticalBlock"],
+.st-key-opportunity-matrix > [data-testid="stVerticalBlock"],
+.st-key-revenue-at-risk > [data-testid="stVerticalBlock"],
+.st-key-illustrative-action > [data-testid="stVerticalBlock"],
+.st-key-decision-trace > [data-testid="stVerticalBlock"],
+.st-key-live-simulator > [data-testid="stVerticalBlock"] {
+  gap: var(--content-gap);
+}
+
+/* Captions follow headings at the base gap; their small trailing margin gives
+   the related chart, table, or control the intended 12px breathing room. */
+.st-key-hero-metrics [data-testid="stCaptionContainer"],
+.st-key-policy-comparison [data-testid="stCaptionContainer"],
+.st-key-model-transparency [data-testid="stCaptionContainer"],
+.st-key-opportunity-matrix [data-testid="stCaptionContainer"],
+.st-key-revenue-at-risk [data-testid="stCaptionContainer"],
+.st-key-illustrative-action [data-testid="stCaptionContainer"],
+.st-key-decision-trace [data-testid="stCaptionContainer"] {
+  margin-bottom: 0.25rem;
+}
+
+.st-key-illustrative-action [data-testid="stCaptionContainer"] {
+  margin-top: 0.25rem;
+}
+
+/* Streamlit supplies spacing after the preceding action button, so this
+   container needs only the remaining 8px to match the 32–40px section gap. */
+.st-key-live-simulator {
+  margin-top: 0.5rem;
+}
+
+.dashboard-title {
+  color: var(--ink-primary);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 0.25rem;
+}
+
+[data-testid="stHeadingWithActionElements"] h3 {
+  color: var(--ink-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+[data-testid="stDataFrame"] {
+  background: var(--bg-panel);
+  border: 1px solid var(--ink-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+[data-testid="stMetricValue"] {
+  color: var(--signal);
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  max-width: 80ch;
+}
+
+.actual-number,
+.predicted-number,
+.diagnostic-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.actual-number {
+  color: var(--signal);
+}
+
+.predicted-number {
+  color: var(--predicted);
+}
+
+.diagnostic-number {
+  color: var(--ink-secondary);
+}
+
+[data-testid="stBaseButton-primary"] {
+  background-color: var(--interactive);
+  border-color: var(--interactive);
+  color: var(--ink-primary);
+}
+
+[data-testid="stBaseButton-primary"]:hover {
+  background-color: var(--interactive);
+  border-color: var(--ink-primary);
+  color: var(--ink-primary);
+}
+
+.action-badge {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  gap: 0.375rem;
+  line-height: 1.2;
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.action-badge-dot {
+  background: currentColor;
+  border-radius: 50%;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.action-badge--auto {
+  color: var(--signal);
+}
+
+.action-badge--review {
+  color: var(--warn);
+}
+
+.action-badge--blocked {
+  background: var(--block);
+  border-color: var(--block);
+  color: var(--ink-primary);
+}
+
+.action-badge--blocked .action-badge-dot {
+  background: var(--ink-primary);
+}
+
+.decision-trace-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--ink-secondary);
+  border-radius: 6px;
+  box-sizing: border-box;
+  min-height: 13.5rem;
+  padding: var(--panel-padding);
+}
+
+.decision-trace-header {
+  align-items: center;
+  display: flex;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+}
+
+.decision-trace-marker {
+  align-items: center;
+  border: 1px solid var(--ink-secondary);
+  border-radius: 50%;
+  color: var(--ink-primary);
+  display: inline-flex;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  height: 1.5rem;
+  justify-content: center;
+  line-height: 1;
+  width: 1.5rem;
+}
+
+.decision-trace-title {
+  color: var(--ink-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.decision-trace-row {
+  margin-bottom: 0.75rem;
+}
+
+.decision-trace-label {
+  color: var(--ink-secondary);
+  display: block;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.decision-trace-value {
+  color: var(--ink-primary);
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.trace-explanation {
+  color: var(--ink-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.live-simulator-disclosure {
+  color: var(--ink-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  /* Keep the two-line disclosure clear of both its heading and form panel. */
+  margin: 0.25rem 0 0.75rem;
+  max-width: 80ch;
+}
+
+[data-testid="stForm"] {
+  background: var(--bg-panel);
+  border: 1px solid var(--ink-secondary);
+  border-radius: 6px;
+  padding: var(--panel-padding);
+}
+
+[data-testid="stForm"] [data-testid="stWidgetLabel"],
+[data-testid="stForm"] label {
+  color: var(--ink-primary);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+[data-testid="stForm"] [data-testid="stElementContainer"] {
+  margin-bottom: 0;
+}
+
+[data-testid="stForm"] [data-testid="stVerticalBlock"] {
+  gap: var(--field-gap);
+}
+
+[data-testid="stForm"] input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.simulator-feedback {
+  align-items: center;
+  background: var(--bg-panel);
+  border: 1px solid var(--ink-secondary);
+  border-radius: 6px;
+  display: flex;
+  gap: 0.625rem;
+  line-height: 1.5;
+  margin-top: 1rem;
+  padding: var(--panel-padding);
+}
+
+.simulator-feedback--loading {
+  color: var(--ink-primary);
+}
+
+.simulator-loading-indicator {
+  animation: simulator-loading-spin 0.8s linear infinite;
+  border: 2px solid var(--ink-secondary);
+  border-radius: 50%;
+  border-top-color: var(--interactive);
+  height: 0.875rem;
+  width: 0.875rem;
+}
+
+.simulator-feedback--error {
+  align-items: flex-start;
+  border-color: var(--block);
+  color: var(--ink-primary);
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.simulator-feedback--error strong {
+  color: var(--block);
+}
+
+@keyframes simulator-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

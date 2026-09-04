@@ -7,10 +7,14 @@ import json
 import os
 import socket
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+import altair as alt
+import pandas as pd
 
 from backend.api.main import predict_recovery_action
 from backend.api.schemas import RecoveryActionRequest
@@ -25,16 +29,28 @@ FEATURE_IMPORTANCES_PATH = (
     Path(__file__).parents[1] / "backend" / "models" / "feature_importances.csv"
 )
 ACTION_STATUS_BADGES = {
-    "escalate_manual_review": "🟡 REVIEW",
-    "no_action": "🔴 BLOCKED",
-    "retry_now": "🟢 AUTO",
-    "retry_scheduled": "🟢 AUTO",
-    "notify_update_card": "🟢 AUTO",
+    "escalate_manual_review": ("REVIEW", "review"),
+    "no_action": ("BLOCKED", "blocked"),
+    "retry_now": ("AUTO", "auto"),
+    "retry_scheduled": ("AUTO", "auto"),
+    "notify_update_card": ("AUTO", "auto"),
 }
 LIVE_SIMULATION_API_URL = os.environ.get(
     "RECOVERLY_API_URL", "http://127.0.0.1:8000/predict-recovery-action"
 )
 LIVE_SIMULATION_TIMEOUT_SECONDS = 15
+STYLES_PATH = Path(__file__).with_name("styles.css")
+THEME = {
+    "bg_base": "#0E1116",
+    "bg_panel": "#13181E",
+    "ink_primary": "#E6E8EB",
+    "ink_secondary": "#8A929E",
+    "interactive": "#5D6673",
+    "signal": "#3DDC84",
+    "predicted": "#5B8DEF",
+    "warn": "#E8A33D",
+    "block": "#D9534F",
+}
 
 
 def load_dashboard_metrics(
@@ -182,88 +198,123 @@ def render_dashboard() -> None:
     baseline = metrics["baseline"]
     smart = metrics["smart"]
     uplift = metrics["comparison"]["incremental_uplift"]
+    baseline_recovery_rate = f"{baseline['recovery_rate']:.1%}"
+    smart_recovery_rate = f"{smart['recovery_rate']:.1%}"
 
-    st.set_page_config(page_title="Recoverly", layout="wide")
-    st.title("Recoverly: recovery decisions with evidence")
-    st.caption(
+    st.set_page_config(page_title="Recoverly", page_icon="💳", layout="wide")
+    _load_styles(st)
+    hero_section = st.container(key="hero-metrics", gap=0)
+    hero_section.markdown(
+        '<h1 class="dashboard-title">Recoverly: recovery decisions with evidence</h1>',
+        unsafe_allow_html=True,
+    )
+    hero_section.caption(
         "Actual figures use only the frozen held-out test set and the policy-blind outcome model. "
         "Predicted values are policy belief-table estimates. Demo cases below are illustrative "
         "train/dev examples and are not included in the actual metrics."
     )
 
-    baseline_column, smart_column, uplift_column = st.columns(3)
+    baseline_column, smart_column, uplift_column = hero_section.columns(3)
     baseline_column.metric("Actual baseline recovered", _format_inr(baseline["rupees_recovered"]))
-    baseline_column.caption(f"Actual recovery rate: {baseline['recovery_rate']:.1%}")
+    baseline_column.markdown(
+        "Actual recovery rate: "
+        f"{_actual_number(baseline_recovery_rate)}",
+        unsafe_allow_html=True,
+    )
     smart_column.metric("Actual agent recovered", _format_inr(smart["rupees_recovered"]))
-    smart_column.caption(f"Actual recovery rate: {smart['recovery_rate']:.1%}")
+    smart_column.markdown(
+        "Actual recovery rate: "
+        f"{_actual_number(smart_recovery_rate)}",
+        unsafe_allow_html=True,
+    )
     uplift_column.metric("Actual incremental uplift", _format_inr(uplift))
     uplift_column.caption("Actual smart ₹ recovered − actual baseline ₹ recovered")
 
-    st.subheader("Actual held-out policy comparison")
-    st.bar_chart(
+    comparison_section = st.container(key="policy-comparison", gap=0)
+    comparison_section.subheader("Actual held-out policy comparison")
+    comparison_section.bar_chart(
         {
             "Actual baseline recovery rate": baseline["recovery_rate"],
             "Actual agent recovery rate": smart["recovery_rate"],
-        }
+        },
+        color=THEME["signal"],
     )
-    st.dataframe(
-        [
-            {
-                "Policy": "Baseline",
-                "Actual recovery rate": f"{baseline['recovery_rate']:.1%}",
-                "Actual ₹ recovered": _format_inr(baseline["rupees_recovered"]),
-            },
-            {
-                "Policy": "Agent",
-                "Actual recovery rate": f"{smart['recovery_rate']:.1%}",
-                "Actual ₹ recovered": _format_inr(smart["rupees_recovered"]),
-            },
-        ],
+    actual_comparison = [
+        {
+            "Policy": "Baseline",
+            "Actual recovery rate": f"{baseline['recovery_rate']:.1%}",
+            "Actual ₹ recovered": _format_inr(baseline["rupees_recovered"]),
+        },
+        {
+            "Policy": "Agent",
+            "Actual recovery rate": f"{smart['recovery_rate']:.1%}",
+            "Actual ₹ recovered": _format_inr(smart["rupees_recovered"]),
+        },
+    ]
+    comparison_section.dataframe(
+        _style_semantic_columns(
+            actual_comparison,
+            ("Actual recovery rate", "Actual ₹ recovered"),
+            "var(--signal)",
+        ),
         hide_index=True,
         use_container_width=True,
     )
 
-    st.subheader("Model transparency")
-    st.caption("Feature importance from the trained failure-reason classifier.")
-    st.bar_chart({row["feature"]: row["importance"] for row in feature_importances})
+    transparency_section = st.container(key="model-transparency", gap=0)
+    transparency_section.subheader("Model transparency")
+    transparency_section.caption("Feature importance from the trained failure-reason classifier.")
+    transparency_section.altair_chart(
+        _feature_importance_chart(feature_importances), use_container_width=True
+    )
 
-    st.subheader("Recovery opportunity matrix")
-    st.caption(
+    opportunity_section = st.container(key="opportunity-matrix", gap=0)
+    opportunity_section.subheader("Recovery opportunity matrix")
+    opportunity_section.caption(
         "Predicted smart-policy opportunities from the frozen held-out test set. "
         "The x-axis is the policy-belief recovery probability for the selected action, "
         "calculated as Expected Recovery Value ÷ transaction amount; it is not an actual outcome."
     )
-    st.scatter_chart(
-        opportunity_matrix,
-        x="Policy belief recovery probability",
-        y="Transaction amount (₹)",
-        size="Expected Recovery Value (₹)",
-        color="Failure reason",
+    opportunity_section.altair_chart(
+        _opportunity_matrix_chart(opportunity_matrix), use_container_width=True
     )
 
-    st.subheader("Revenue at risk by failure reason")
-    st.caption("Failed transaction value grouped by observed failure reason in the frozen held-out test set.")
-    st.bar_chart(revenue_at_risk, x="Failure reason", y="Revenue at risk (₹)")
+    risk_section = st.container(key="revenue-at-risk", gap=0)
+    risk_section.subheader("Revenue at risk by failure reason")
+    risk_section.caption(
+        "Failed transaction value grouped by observed failure reason in the frozen held-out test set."
+    )
+    risk_section.bar_chart(
+        revenue_at_risk,
+        x="Failure reason",
+        y="Revenue at risk (₹)",
+        color=THEME["signal"],
+    )
 
-    st.subheader("Illustrative recovery action")
-    selected_case = st.selectbox(
+    demo_section = st.container(key="illustrative-action", gap=0)
+    demo_section.subheader("Illustrative recovery action")
+    selected_case = demo_section.selectbox(
         "Choose a demo case",
         demo_cases,
         format_func=lambda case: f"{case['expected_action']} — {case['txn_id'][:8]}",
     )
-    st.caption(
+    demo_section.caption(
         f"Source split: {selected_case['source_split']}. "
         f"Expected illustrative action: {selected_case['expected_action']}."
     )
-    if st.button("Run recovery action", type="primary"):
+    if demo_section.button("Run recovery action", type="primary"):
         _render_decision_response(st, run_demo_case(selected_case))
 
-    st.subheader("Live recovery simulator")
-    st.caption(
+    live_section = st.container(key="live-simulator", gap=0)
+    live_section.subheader("Live recovery simulator")
+    live_section.markdown(
+        '<p class="live-simulator-disclosure">'
         "Live simulation — not part of held-out or demo metrics. "
         "This form sends your scenario to the running FastAPI recovery-action endpoint."
+        "</p>",
+        unsafe_allow_html=True,
     )
-    with st.form("live-recovery-simulator"):
+    with live_section.form("live-recovery-simulator"):
         amount = st.number_input("Amount (₹)", min_value=0.0, value=1_000.0, step=100.0)
         hour_of_day = st.slider("Hour of day", min_value=0, max_value=23, value=9)
         day_of_month = st.slider("Day of month", min_value=1, max_value=31, value=1)
@@ -281,6 +332,7 @@ def render_dashboard() -> None:
         submitted = st.form_submit_button("Simulate recovery action", type="primary")
 
     if submitted:
+        feedback = live_section.empty()
         try:
             simulation_payload = {
                 "amount": float(amount),
@@ -296,9 +348,12 @@ def render_dashboard() -> None:
                 "decision_at": datetime.combine(decision_date, decision_time).isoformat(),
                 "scheduled_retry_ats": [],
             }
-            _render_decision_response(st, run_live_simulation(simulation_payload))
+            feedback.markdown(_simulator_loading_feedback(), unsafe_allow_html=True)
+            response = run_live_simulation(simulation_payload)
+            feedback.empty()
+            _render_decision_response(st, response)
         except (ConnectionError, ValueError) as error:
-            st.error(str(error))
+            feedback.markdown(_simulator_error_feedback(str(error)), unsafe_allow_html=True)
 
 
 def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
@@ -308,41 +363,247 @@ def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
         "ai_generated": "AI generated",
         "template_fallback": "Template fallback",
     }[response["explanation_source"]]
+    confidence = f"{response['confidence']:.2%}"
 
-    st.subheader("Decision trace")
-    st.caption("Actual outputs from this single recovery-action API response.")
-    classify_column, decide_column, explain_column = st.columns(3)
+    trace_section = st.container(key="decision-trace", gap=0)
+    trace_section.subheader("Decision trace")
+    trace_section.caption("Actual outputs from this single recovery-action API response.")
+    classify_column, decide_column, explain_column = trace_section.columns(3)
     with classify_column:
-        st.markdown("#### 1. Classify")
-        st.write(f"Reason: {response['reason']}")
-        st.write(f"Confidence: {response['confidence']:.2%}")
+        st.markdown(
+            _trace_panel(
+                1,
+                "Classify",
+                _trace_row("Reason", escape(str(response["reason"])))
+                + _trace_row("Confidence", _diagnostic_number(confidence)),
+            ),
+            unsafe_allow_html=True,
+        )
     with decide_column:
-        st.markdown("#### 2. Decide")
-        st.write(f"Action: {response['action']}")
-        st.markdown(f"**{ACTION_STATUS_BADGES[response['action']]}**")
+        decision_rows = _trace_row("Action", escape(str(response["action"])))
+        decision_rows += _status_badge(str(response["action"]))
         if response["retry_at"]:
-            st.write(f"Retry at: {response['retry_at']}")
-        st.write(f"Expected Recovery Value: {_format_inr(response['expected_value'])}")
+            decision_rows += _trace_row("Retry at", escape(str(response["retry_at"])))
+        st.markdown(
+            _trace_panel(
+                2,
+                "Decide",
+                decision_rows
+                + _trace_row(
+                    "Expected Recovery Value",
+                    _predicted_number(_format_inr(response["expected_value"])),
+                ),
+            ),
+            unsafe_allow_html=True,
+        )
     with explain_column:
-        st.markdown("#### 3. Explain")
-        st.write(f"Source: {explanation_source}")
-        st.write(response["explanation"])
+        st.markdown(
+            _trace_panel(
+                3,
+                "Explain",
+                _trace_row("Source", escape(explanation_source))
+                + f'<div class="trace-explanation">{escape(str(response["explanation"]))}</div>',
+            ),
+            unsafe_allow_html=True,
+        )
 
     candidates = response.get("candidates")
     if candidates:
-        st.caption("Scored policy candidates (predicted Expected Recovery Value).")
-        st.dataframe(
-            [
-                {
-                    "Action": candidate["action"],
-                    "Retry at": candidate["retry_at"],
-                    "Expected Recovery Value (₹)": _format_inr(candidate["expected_value"]),
-                }
-                for candidate in candidates
-            ],
+        trace_section.caption("Scored policy candidates (predicted Expected Recovery Value).")
+        candidate_rows = [
+            {
+                "Action": candidate["action"],
+                "Retry at": candidate["retry_at"],
+                "Expected Recovery Value (₹)": _format_inr(candidate["expected_value"]),
+            }
+            for candidate in candidates
+        ]
+        trace_section.dataframe(
+            _style_candidate_rows(candidate_rows),
             hide_index=True,
             use_container_width=True,
         )
+
+
+def _load_styles(st: Any) -> None:
+    """Load the local presentation stylesheet without altering dashboard behavior."""
+
+    st.markdown(
+        f"<style>{STYLES_PATH.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def _actual_number(value: str) -> str:
+    """Return a display-only wrapper for a verified held-out number."""
+
+    return f'<span class="actual-number">{value}</span>'
+
+
+def _predicted_number(value: str) -> str:
+    """Return a display-only wrapper for a model-estimated number."""
+
+    return f'<span class="predicted-number">{value}</span>'
+
+
+def _diagnostic_number(value: str) -> str:
+    """Return a display-only wrapper for a model diagnostic, not an estimate."""
+
+    return f'<span class="diagnostic-number">{value}</span>'
+
+
+def _status_badge(action: str) -> str:
+    """Return the existing action status as a presentation-only semantic pill."""
+
+    label, tone = ACTION_STATUS_BADGES[action]
+    return (
+        f'<span class="action-badge action-badge--{tone}">'
+        '<span class="action-badge-dot"></span>'
+        f"{label}</span>"
+    )
+
+
+def _trace_panel(step: int, title: str, content: str) -> str:
+    """Return one display-only panel in the existing decision sequence."""
+
+    return (
+        '<section class="decision-trace-panel">'
+        '<div class="decision-trace-header">'
+        f'<span class="decision-trace-marker">{step}</span>'
+        f'<h4 class="decision-trace-title">{escape(title)}</h4>'
+        "</div>"
+        f"{content}"
+        "</section>"
+    )
+
+
+def _trace_row(label: str, value: str) -> str:
+    """Return one display-only label/value row within a decision-trace panel."""
+
+    return (
+        '<div class="decision-trace-row">'
+        f'<span class="decision-trace-label">{escape(label)}</span>'
+        f'<span class="decision-trace-value">{value}</span>'
+        "</div>"
+    )
+
+
+def _simulator_loading_feedback() -> str:
+    """Return the display-only loading state for an in-flight simulator request."""
+
+    return (
+        '<div class="simulator-feedback simulator-feedback--loading">'
+        '<span class="simulator-loading-indicator" aria-hidden="true"></span>'
+        "<span>Running recovery decision…</span>"
+        "</div>"
+    )
+
+
+def _simulator_error_feedback(message: str) -> str:
+    """Return an escaped, display-only error state without a raw traceback."""
+
+    return (
+        '<div class="simulator-feedback simulator-feedback--error">'
+        "<strong>Recovery simulation unavailable.</strong>"
+        f"<span>{escape(message)}</span>"
+        "</div>"
+    )
+
+
+def _style_semantic_columns(
+    rows: list[dict[str, Any]], columns: tuple[str, ...], color: str
+) -> Any:
+    """Style existing read-only table numbers without changing their values."""
+
+    return pd.DataFrame(rows).style.set_properties(
+        subset=list(columns),
+        **{
+            "color": color,
+            "font-variant-numeric": "tabular-nums",
+            "font-weight": "600",
+        },
+    )
+
+
+def _style_candidate_rows(rows: list[dict[str, Any]]) -> Any:
+    """Keep ranked policy candidates readable without adding row emphasis."""
+
+    dataframe = pd.DataFrame(rows)
+    styles = pd.DataFrame(
+        # Streamlit renders Styler cell rules in an isolated dataframe surface,
+        # so use the established theme values directly rather than CSS variables.
+        "color: #E6E8EB;",
+        index=dataframe.index,
+        columns=dataframe.columns,
+    )
+    return dataframe.style.apply(lambda _: styles, axis=None).set_properties(
+        **{"font-variant-numeric": "tabular-nums"}
+    )
+
+
+def _feature_importance_chart(rows: list[dict[str, float | str]]) -> alt.Chart:
+    """Render non-negative classifier importances with a zero-based axis."""
+
+    return (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_bar(color=THEME["ink_secondary"])
+        .encode(
+            x=alt.X("feature:N", sort=None, title="Feature"),
+            y=alt.Y(
+                "importance:Q",
+                scale=alt.Scale(domainMin=0),
+                title="Feature importance",
+            ),
+            tooltip=[
+                alt.Tooltip("feature:N", title="Feature"),
+                alt.Tooltip("importance:Q", title="Importance", format=".8f"),
+            ],
+        )
+        .configure(background=THEME["bg_panel"])
+        .configure_axis(
+            domainColor=THEME["ink_secondary"],
+            gridColor=THEME["ink_secondary"],
+            labelColor=THEME["ink_primary"],
+            titleColor=THEME["ink_primary"],
+        )
+        .configure_view(stroke=THEME["ink_secondary"])
+    )
+
+
+def _opportunity_matrix_chart(rows: list[dict[str, float | str]]) -> alt.Chart:
+    """Return the existing predicted-opportunity chart with explicit theme colors."""
+
+    return (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_circle(color=THEME["predicted"], opacity=0.8)
+        .encode(
+            x=alt.X(
+                "Policy belief recovery probability:Q",
+                title="Policy belief recovery probability",
+            ),
+            y=alt.Y("Transaction amount (₹):Q", title="Transaction amount (₹)"),
+            size=alt.Size("Expected Recovery Value (₹):Q"),
+            tooltip=[
+                alt.Tooltip("Failure reason:N", title="Failure reason"),
+                alt.Tooltip(
+                    "Policy belief recovery probability:Q",
+                    title="Policy belief recovery probability",
+                ),
+                alt.Tooltip("Transaction amount (₹):Q", title="Transaction amount (₹)"),
+                alt.Tooltip(
+                    "Expected Recovery Value (₹):Q", title="Expected Recovery Value (₹)"
+                ),
+            ],
+        )
+        .configure(background=THEME["bg_panel"])
+        .configure_axis(
+            domainColor=THEME["ink_secondary"],
+            gridColor=THEME["ink_secondary"],
+            labelColor=THEME["ink_primary"],
+            titleColor=THEME["ink_primary"],
+        )
+        .configure_view(stroke=THEME["ink_secondary"])
+    )
 
 
 def parse_history_distribution(value: str) -> dict[str, float]:
