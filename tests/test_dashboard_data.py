@@ -131,7 +131,16 @@ def test_live_simulator_posts_leakage_safe_payload_to_the_api(monkeypatch: pytes
     }
     assert captured["url"] == "http://api.test/predict-recovery-action"
     assert json.loads(captured["body"]) == payload
-    assert captured["timeout"] == 10
+    assert captured["timeout"] == dashboard_app.LIVE_SIMULATION_TIMEOUT_SECONDS
+
+
+def test_live_simulator_converts_response_timeout_to_a_clear_connection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dashboard_app, "urlopen", lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError()))
+
+    with pytest.raises(ConnectionError, match="did not respond within 15 seconds"):
+        run_live_simulation({"amount": 1_000.0})
 
 
 def test_live_simulator_validates_history_distribution_json() -> None:

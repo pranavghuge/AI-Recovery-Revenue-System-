@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ ACTION_STATUS_BADGES = {
 LIVE_SIMULATION_API_URL = os.environ.get(
     "RECOVERLY_API_URL", "http://127.0.0.1:8000/predict-recovery-action"
 )
+LIVE_SIMULATION_TIMEOUT_SECONDS = 15
 
 
 def load_dashboard_metrics(
@@ -151,8 +153,13 @@ def run_live_simulation(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=LIVE_SIMULATION_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
+    except (TimeoutError, socket.timeout) as error:
+        raise ConnectionError(
+            "The Recovery API did not respond within 15 seconds. "
+            "Check that the backend is running, then try the simulation again."
+        ) from error
     except HTTPError as error:
         details = error.read().decode("utf-8", errors="replace")
         raise ValueError(f"Recovery API rejected the simulation: {details}") from error

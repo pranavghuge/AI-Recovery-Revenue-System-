@@ -59,6 +59,16 @@ def test_grounded_live_response_is_returned(monkeypatch: pytest.MonkeyPatch) -> 
     assert explain.explain_decision(_decision()) == grounded_response
 
 
+def test_gemini_model_uses_current_default_and_environment_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert explain._gemini_model_name() == "gemini-2.5-flash"
+
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-custom-model")
+    assert explain._gemini_model_name() == "gemini-custom-model"
+
+
 def test_explanation_source_reports_live_or_template_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     fallback_explanation, fallback_source = explain.explain_decision_with_source(_decision())

@@ -16,7 +16,7 @@ ALLOWED_DECISION_KEYS = frozenset(
 )
 LIVE_CALL_TIMEOUT_SECONDS = 2.0
 LIVE_PATH_LATENCY_BUDGET_SECONDS = 3.0
-GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 NUMBER_PATTERN = re.compile(r"(?<![A-Za-z])[-+]?\d[\d,]*(?:\.\d+)?")
 
 
@@ -85,10 +85,18 @@ def _generate_from_gemini(prompt: str, api_key: str, timeout_seconds: float) -> 
         api_key=api_key,
         http_options=types.HttpOptions(timeout=int(timeout_seconds * 1_000)),
     )
-    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+    response = client.models.generate_content(
+        model=_gemini_model_name(), contents=prompt
+    )
     if not response.text:
         raise RuntimeError("Gemini returned an empty explanation")
     return response.text.strip()
+
+
+def _gemini_model_name() -> str:
+    """Return the deployment-configured Gemini model without storing secrets."""
+
+    return os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 
 
 def _allowed_decision(decision: dict) -> dict[str, Any]:
