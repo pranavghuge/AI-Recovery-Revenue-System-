@@ -258,14 +258,14 @@ def render_dashboard() -> None:
             "var(--signal)",
         ),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
     transparency_section = st.container(key="model-transparency", gap=0)
     transparency_section.subheader("Model transparency")
     transparency_section.caption("Feature importance from the trained failure-reason classifier.")
     transparency_section.altair_chart(
-        _feature_importance_chart(feature_importances), use_container_width=True
+        _feature_importance_chart(feature_importances), width="stretch"
     )
 
     opportunity_section = st.container(key="opportunity-matrix", gap=0)
@@ -276,7 +276,7 @@ def render_dashboard() -> None:
         "calculated as Expected Recovery Value ÷ transaction amount; it is not an actual outcome."
     )
     opportunity_section.altair_chart(
-        _opportunity_matrix_chart(opportunity_matrix), use_container_width=True
+        _opportunity_matrix_chart(opportunity_matrix), width="stretch"
     )
 
     risk_section = st.container(key="revenue-at-risk", gap=0)
@@ -421,7 +421,7 @@ def _render_decision_response(st: Any, response: dict[str, Any]) -> None:
         trace_section.dataframe(
             _style_candidate_rows(candidate_rows),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
 

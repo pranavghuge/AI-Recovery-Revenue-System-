@@ -64,7 +64,7 @@ existing controls retain their native behavior.
   --ink-primary: #E6E8EB;
   --ink-secondary: #8A929E;
   --interactive: #5D6673;
-  --signal: #3DDC84;
+  --signal: #54b27e;
   --signal-tint: rgba(61, 220, 132, 0.12);
   --predicted: #5B8DEF;
   --warn: #E8A33D;
@@ -103,11 +103,12 @@ existing controls retain their native behavior.
 .st-key-model-transparency [data-testid="stCaptionContainer"],
 .st-key-opportunity-matrix [data-testid="stCaptionContainer"],
 .st-key-revenue-at-risk [data-testid="stCaptionContainer"],
-.st-key-illustrative-action [data-testid="stCaptionContainer"],
-.st-key-decision-trace [data-testid="stCaptionContainer"] {
+.st-key-illustrative-action [data-testid="stCaptionContainer"]{
   margin-bottom: 0.25rem;
 }
-
+.st-key-decision-trace [data-testid="stCaptionContainer"]{
+  margin-top: 1.50rem;margin-bottom:0.010rem;
+}
 .st-key-illustrative-action [data-testid="stCaptionContainer"] {
   margin-top: 0.25rem;
 }
@@ -115,7 +116,7 @@ existing controls retain their native behavior.
 /* Streamlit supplies spacing after the preceding action button, so this
    container needs only the remaining 8px to match the 32–40px section gap. */
 .st-key-live-simulator {
-  margin-top: 0.5rem;
+  margin-top: 0.5rem;margin-bottom:0.95rem ;
 }
 
 .dashboard-title {

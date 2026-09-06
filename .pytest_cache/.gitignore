@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Pytest cache and verification-run artifacts
+.pytest_cache/
+.pytest-audit-temp/
+.pytest-full-clean/
+.pytest-full-patched/
+.pytest-verification-temp/
+.verification-tmp/
+pytest_full_clean_accessible/
+pytest_full_clean_final/
+pytest_full_confirmation/
+pytest_full_exitcode/
+pytest_mode_probe_700/
+pytest_mode_probe_777/
+pytest_permission_probe/
+pytest_temp_full_20260902/
+pytest_temp_probe/
+
+# Package build artifact
+recoverly.egg-info/
+
+# Scratch work folder (leftover debugging CSVs, not real outputs)
+work/
+
+# Streamlit local cache, if any
+.streamlit/secrets.toml
